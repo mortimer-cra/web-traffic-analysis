@@ -2,12 +2,26 @@ package com.twq.spark.web
 
 import com.twq.parser.dataobject.BaseDataObject
 import com.twq.prepaser.PreParsedLog
+import com.twq.spark.web.external.{HBaseSnapshotAdmin, HbaseConnectionFactory}
 import org.apache.spark.{HashPartitioner, SparkConf}
 import org.apache.spark.serializer.KryoSerializer
 import org.apache.spark.sql.{Encoders, Row, SparkSession}
 
 /**
+  * Hue
   *  网站流量离线分析Spark ETL入口(应用层面)
+  spark-submit --master spark://master:7077 \
+--class com.twq.spark.web.WebETL \
+--driver-memory 512M \
+--executor-memory 1G \
+--total-executor-cores 2 \
+--executor-cores 1 \
+--conf spark.web.etl.inputBaseDir=hdfs://master:9999/user/hive/warehouse/rawdata.db/web \
+--conf spark.web.etl.outputBaseDir=hdfs://master:9999/user/hadoop-twq/traffic-analysis/web \
+--conf spark.web.etl.startDate=20180617 \
+--conf spark.driver.extraJavaOptions="-Dweb.metadata.mongodbAddr=192.168.1.102 -Dweb.etl.hbase.zk.quorums=master" \
+--conf spark.executor.extraJavaOptions="-Dweb.metadata.mongodbAddr=192.168.1.102 -Dweb.etl.hbase.zk.quorums=master -Dcom.sun.management.jmxremote.port=1119 -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false" \
+/home/hadoop-twq/traffice-analysis/jars/spark-sessionization-etl-1.0-SNAPSHOT-jar-with-dependencies.jar prod
   */
 object WebETL {
   def main(args: Array[String]): Unit = {
@@ -25,7 +39,7 @@ object WebETL {
     val outputBaseDir = conf.getOption("spark.web.etl.outputBaseDir")
       .getOrElse("hdfs://master:9999/user/hadoop-twq/traffic-analysis/web")
     //日志的时间
-    val dateStr = conf.getOption("spark.web.etl.startDate").getOrElse("20180615")
+    val dateStr = conf.getOption("spark.web.etl.startDate").getOrElse("20180616")
     //分区数
     val numPartitions = conf.getInt("spark.web.etl.numberPartitions", 5)
 
@@ -77,7 +91,7 @@ object WebETL {
         *  (CombinedId(profileId3,user3), List(BaseDataObject(profileId3,user3,ev,client_ip.....)))
         *  (CombinedId(profileIdn,usern), List(BaseDataObject(profileIdn,usern,pv,client_ip.....),
         *                                      BaseDataObject(profileIdn,usern,mc,client_ip.....),
-        *                                      BaseDataObject(profileIdn,usern,pv,client_ip.....)))
+        *                                       BaseDataObject(profileIdn,usern,pv,client_ip.....)))
         */
       //处理每一个分区的数据
       val partitionProcessor = new PartitionProcessor(index, iterator, outputBaseDir, dateStr)
@@ -88,6 +102,11 @@ object WebETL {
     }).foreach( (_: Unit) => {})
 
     spark.stop()
+
+    //给表web-user创建snapshot，以便于数据的重跑
+    val snapshotAdmin = new HBaseSnapshotAdmin(HbaseConnectionFactory.getHbaseConn)
+    val targetUserTable = System.getProperty("web.etl.hbase.UserTableName", "web-user")
+    snapshotAdmin.takeSnapshot(s"${targetUserTable}_snapshot-${dateStr}", targetUserTable)
   }
 
   private def transform(row: Row): PreParsedLog = {

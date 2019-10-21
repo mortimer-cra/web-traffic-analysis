@@ -1,0 +1,29 @@
+{
+  "Name": "test",
+  "IsDisabled": false,
+  "Description": "",
+  "Id": "57f8df278a4bf51e2d834be8",
+  "ProfileId": 524,
+  "MatchPattern": "/haier_regUser3",
+  "MatchType": "CONTAINS",
+  "MatchWithoutQueryString": false,
+  "CreatedDate": "2016-10-02T22:12:46.674+08:00",
+  "CreatedBy": "Wd3Migrator",
+  "ModifiedDate": "2016-10-02T22:12:46.674+08:00",
+  "ModifiedBy": "Wd3Migrator"
+}
+
+{
+  "Name" : "test target",
+  "IsDisabled" : false,
+  "Description" : "",
+  "Id" : "57f8df278a4bf51e2d834be9",
+  "ProfileId" : 702,
+  "MatchPattern" : "/checkoutLogin",
+  "MatchType" : "CONTAINS",
+  "MatchWithoutQueryString" : false,
+  "CreatedDate" : "2016-10-02T22:12:46.674+08:00",
+  "CreatedBy" : "Wd3Migrator",
+  "ModifiedDate" : "2016-10-02T22:12:46.674+08:00",
+  "ModifiedBy" : "Wd3Migrator"
+}

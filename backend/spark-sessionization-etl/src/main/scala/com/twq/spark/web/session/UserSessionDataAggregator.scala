@@ -2,6 +2,7 @@ package com.twq.spark.web.session
 
 import com.twq.parser.dataobject._
 import com.twq.parser.dataobject.dim.TargetPageInfo
+import com.twq.spark.web.external.UserVisitInfo
 import com.twq.spark.web.{AvroRecordBuilder, CombinedId, ConversionBuilder}
 import com.twq.web.{Conversion, Heartbeat, MouseClick, PageView, Session}
 
@@ -15,7 +16,8 @@ import scala.collection.immutable.VectorBuilder
   */
 class UserSessionDataAggregator(
                                  id: CombinedId,
-                                 serverSessionIdStart: Long)
+                                 serverSessionIdStart: Long,
+                                 lastPersistedUserVisitInfo: Option[UserVisitInfo])
   extends ConversionBuilder
     with AvroRecordBuilder {
 
@@ -32,21 +34,23 @@ class UserSessionDataAggregator(
     * @param sessions 一个user产生的所有的会话
     * @return 这个user产生的所有的聚合后DataRecords
     */
-  def aggregate(sessions: Seq[SessionData]): Seq[DataRecords] = {
+  def aggregate(sessions: Seq[SessionData]): (UserVisitInfo, Seq[DataRecords]) = {
     val classifiedSessionData = sessions.zipWithIndex map { case (sessionData, index) =>
       //给每一个会话中的所以dataObject进行归类
       new ClassifiedSessionData(index, sessionData)
     }
 
+    val initUserVisitInfo = lastPersistedUserVisitInfo getOrElse UserVisitInfo(id, UserVisitInfo.INIT_LAST_VISIT_TIME, 0)
+
     //对每一个会话进行聚合计算，将最终的实体计算出来
-    val finalRecordsBuilder =
-      classifiedSessionData.foldLeft(Vector.newBuilder[DataRecords]) {
-        case (recordsBuilder, data) => {
+    val (userVisitInfo, finalRecordsBuilder) =
+      classifiedSessionData.foldLeft(initUserVisitInfo, Vector.newBuilder[DataRecords]) {
+        case ((currentUserVisitInfo, recordsBuilder), data) => {
           //以下所有都是一个会话级别的计算
           //计算会话id
           val sessionId = serverSessionIdStart + data.sessionIndex
           //计算这个会话最终的会话实体
-          val session = produceSession(sessionId, data)
+          val session = produceSession(sessionId, data, currentUserVisitInfo)
           //计算这个会话中的所有的PageView实体
           val pageViews = producePageViews(data, session)
           //计算这个会话中的所有的Heartbeat实体
@@ -57,14 +61,17 @@ class UserSessionDataAggregator(
           val conversions = produceConversions(sessionId, data.allActiveTargetInfo, data.eventData)
           //将会话的信息派生到转化实体中
           val conversionsWithSession = conversions.map(buildConversion(_, session))
-
+          //更新用户访问信息
+          val updatedVisitInfo = currentUserVisitInfo.copy(
+            lastVisitIndex = currentUserVisitInfo.lastVisitIndex + 1,
+            lastVisitTime = data.sessionStartTime)
           //这个会话中的所有的实体对象
           recordsBuilder += DataRecords(session, pageViews, mouseClicks, conversionsWithSession, heartbeats)
-          recordsBuilder
+          (updatedVisitInfo, recordsBuilder)
         }
       }
 
-    finalRecordsBuilder.result()
+    (userVisitInfo, finalRecordsBuilder.result())
   }
 
 
@@ -81,12 +88,27 @@ class UserSessionDataAggregator(
     * @return Session
     */
   private def produceSession(sessionId: Long,
-                             data: ClassifiedSessionData): Session = {
+                             data: ClassifiedSessionData, userVisitInfo: UserVisitInfo): Session = {
 
     val sessionBuilder = Session.newBuilder()
     sessionBuilder.setServerSessionId(sessionId)
     //计算会话停留时长
     sessionBuilder.setSessionDuration(data.fetchSessionDuration)
+
+    //计算是否是新的访客
+    val isNewVisitor = if (userVisitInfo.lastVisitTime == UserVisitInfo.INIT_LAST_VISIT_TIME) true else false
+    //计算这个访客自从上次访问到这次访问中间隔了多少天
+    val daysSinceLastVisit =
+      if (isNewVisitor) -1
+      else {
+        import com.github.nscala_time.time.Imports._
+        val lastDateMidNight = new DateTime(userVisitInfo.lastVisitTime).toDateMidnight
+        val currentDateMidNight = new DateTime(data.sessionStartTime).toDateMidnight
+        (lastDateMidNight to currentDateMidNight).toDuration.days.toInt
+      }
+    sessionBuilder.setIsNewVisitor(isNewVisitor)
+    sessionBuilder.setDaysSinceLastVisit(daysSinceLastVisit)
+    sessionBuilder.setUserVisitNumber(userVisitInfo.lastVisitIndex + 1) //访客访问的次数
 
     //会话特定的页面维度
     val (landingPageViewInfo, secondPageViewInfo, exitPagePageViewInfo) =

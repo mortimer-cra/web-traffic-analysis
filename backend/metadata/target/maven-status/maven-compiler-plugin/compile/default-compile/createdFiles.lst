@@ -1,0 +1,5 @@
+com\twq\metadata\api\ProfileConfigManager.class
+com\twq\metadata\api\impl\MongoProfileConfigManager.class
+com\twq\metadata\model\TargetPage.class
+com\twq\metadata\MongoDB.class
+com\twq\metadata\api\impl\MongoProfileConfigManager$1.class

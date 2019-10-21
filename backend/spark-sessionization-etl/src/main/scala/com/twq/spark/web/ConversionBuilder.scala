@@ -56,7 +56,7 @@ trait ConversionBuilder {
                                           sessionId: Long) = {
     activeTargetInfoArray map { case (target, targetInfo) =>
       val conversion = Conversion.newBuilder().build()
-      conversion.setConversionId(generateConversionId(sessionId))
+        conversion.setConversionId(generateConversionId(sessionId))
       conversion.setType(ConversionType.TARGET_PAGE.getValue)
       conversion.setName(targetInfo.getTargetName)
       conversion.setConversionPageUrl(target.getPvDataObject.getSiteResourceInfo.getUrl)
